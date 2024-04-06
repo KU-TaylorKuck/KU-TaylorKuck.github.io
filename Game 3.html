@@ -1,0 +1,733 @@
+<html>
+<body>
+
+<div id="root">
+</div>
+
+<div id="startUp">
+Welcome! To get started, enter your unique ID number and click the start button.
+</br>
+</br>
+<input type="numeric" id="userNumber">
+
+<button id="StartButton" onclick="setup()">Start</button>
+</div>
+
+<div id="tail">
+</div>
+
+
+<script>
+
+// 92 pixels per inch is normal
+// 36 pixels per cm
+// 290 pixels/second = 8 cm/s
+const pieceSpeed = 90; //in pixels per second
+// const pieceSpeed = 290; //in pixels per second
+const displayX = 800;
+const displayY = 600;
+const pieceRadius = 46;
+mouseDown = 0;
+mouseX = 0;
+mouseY = 0;
+offsetX = 0;
+offsetY = 0;
+gameInterval = 0;
+userId = 0;
+roundDuration = 30; //in seconds // not used
+
+/* Randomize array in-place using Durstenfeld shuffle algorithm */
+function shuffleArray(array) {
+    for (var i = array.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var temp = array[i];
+        array[i] = array[j];
+        array[j] = temp;
+    }
+}
+
+class roundData {
+  constructor() {
+    this.participantId = userId;
+    this.timeStart = Date.now();
+    this.responseTimes = [];
+    this.numberOfResponses = 0;
+    this.pointTimes = [];
+    this.pointsEarned = 0;
+    this.clickTimes = [];
+    this.mouseClicks = 0;
+  }
+
+  clickObject(objectId) {
+    this.responseTimes.push([(Date.now()-this.timeStart)/1000.0,objectId]);
+    this.numberOfResponses += 1;
+  }
+
+  rewardGiven() {
+    this.pointTimes.push((Date.now()-this.timeStart)/1000.0);
+    this.pointsEarned += 1;
+  }
+
+  mouseClicked() {
+    this.clickTimes.push((Date.now()-this.timeStart)/1000.0);
+    this.mouseClicks += 1;
+  }
+
+  toString() {
+    this.outString = "UserId,"+String(userId)+"\nPoints,"+String(this.pointsEarned)+"\nStart time,"+String(this.timeStart);
+    this.outString = this.outString.concat("\nEnd time,"+String((Date.now()-this.timeStart)/1000.0)+"\nResponse Time,Response Id,Reward Time\n");
+    for (let i=0; i<this.numberOfResponses; ++i) {
+      this.tempString = String(this.responseTimes[i][0])+","+String(this.responseTimes[i][1]);
+      if (i<this.pointsEarned) {
+        this.tempString = this.tempString.concat(","+String(this.pointTimes[i]));
+      }
+      this.outString = this.outString.concat(this.tempString+"\n");
+    }
+    return this.outString;
+  }
+}
+
+class bouncingObject {
+  constructor(color = "red", shape = "square") {
+    this.radius = pieceRadius;
+    this.xPos = Math.random()*(displayX-2*this.radius)+this.radius;
+    this.yPos = Math.random()*(displayY-2*this.radius)+this.radius;
+    this.velocity = [0,0];
+    this.color = color;
+    this.shape = shape;
+    this.xLowGap = this.radius;
+    this.xHighGap = this.radius;
+    this.yLowGap = this.radius;
+    this.yHighGap = this.radius;
+
+    // math to give a fixed speed and uniform random direction
+
+    this.rv1=Math.random();
+    this.rv2=Math.random();
+    //set the motion to be normally distribted in 2 dimensions by using a few transformations
+    this.tempx=Math.sqrt(-2*Math.log(this.rv1))*Math.cos(2*Math.PI*this.rv2);
+    this.tempy=Math.sqrt(-2*Math.log(this.rv1))*Math.sin(2*Math.PI*this.rv2);
+    //normalize the speed.
+    this.speedCoeff = pieceSpeed/50;
+    this.velocity = [this.speedCoeff*this.tempx/Math.sqrt(this.tempx*this.tempx+this.tempy*this.tempy),
+                     this.speedCoeff*this.tempy/Math.sqrt(this.tempx*this.tempx+this.tempy*this.tempy)];
+  }
+
+  become(shape = "square"){
+    this.shape = shape;
+    if (shape == "square"){
+      this.xLowGap = this.radius;
+      this.xHighGap = this.radius;
+      this.yLowGap = this.radius;
+      this.yHighGap = this.radius;
+    }
+    if (shape == "circle"){
+      this.xLowGap = this.radius;
+      this.xHighGap = this.radius;
+      this.yLowGap = this.radius;
+      this.yHighGap = this.radius;
+    }
+    if (shape == "triangle"){
+      this.xLowGap = 0.866*this.radius;
+      this.xHighGap = 0.866*this.radius;
+      this.yLowGap = this.radius;
+      this.yHighGap = 0.5*this.radius;
+    }
+    if (shape == "upsidedown triangle"){
+      this.xLowGap = 0.866*this.radius;
+      this.xHighGap = 0.866*this.radius;
+      this.yLowGap = 0.5*this.radius;
+      this.yHighGap = this.radius;
+    }
+  }
+
+  drawThis(context) {
+    context.fillStyle = this.color;
+    if (this.shape == "square"){
+      context.fillRect(this.xPos-this.radius, this.yPos-this.radius, 2*this.radius, 2*this.radius);
+    }
+    if (this.shape == "circle"){
+      context.beginPath();
+      context.arc(this.xPos,this.yPos,this.radius,0,2*Math.PI);
+      context.fill();
+    }
+    if (this.shape == "triangle"){
+      context.beginPath();
+      context.moveTo(this.xPos,this.yPos-this.radius)
+      context.lineTo(this.xPos+0.866*this.radius,this.yPos+0.5*this.radius)
+      context.lineTo(this.xPos-0.866*this.radius,this.yPos+0.5*this.radius)
+      context.fill();
+    }
+    if (this.shape == "upsidedown triangle"){
+      context.beginPath();
+      context.moveTo(this.xPos,this.yPos+this.radius)
+      context.lineTo(this.xPos+0.866*this.radius,this.yPos-0.5*this.radius)
+      context.lineTo(this.xPos-0.866*this.radius,this.yPos-0.5*this.radius)
+      context.fill();
+    }
+  }
+
+  mouseAboveThis(){
+    return this.pointInsideThis(mouseX,mouseY);
+  }
+
+  pointInsideThis(anX,anY){
+    if (this.shape == "square"){
+      if (Math.abs(anX-this.xPos)< this.radius && Math.abs(anY-this.yPos)< this.radius){
+        return true;
+      }
+      return false;
+    }
+    if (this.shape == "circle"){
+      if ((anX-this.xPos)**2 + (anY-this.yPos)**2 < this.radius**2 ){
+        return true;
+      }
+      return false;
+    }
+    if (this.shape == "triangle"){
+      // check the dot product is correct with each of the 3 hyperplanes
+      if ((anX*0    +anY*1     < (this.xPos+0.866*this.radius)*0     + (this.yPos+0.5*this.radius)*1)    &&
+          (anX*0.866+anY*-0.5  < (this.xPos)                  *0.866 + (this.yPos-this.radius)    *-0.5) &&
+          (anX*-0.866+anY*-0.5  < (this.xPos)                  *-0.866 + (this.yPos-this.radius)    *-0.5) &&
+          true ){
+        return true;
+      }
+      return false;
+    }
+    if (this.shape == "upsidedown triangle"){
+      if ((anX*0    +anY*-1     < (this.xPos+0.866*this.radius)*0     + (this.yPos-0.5*this.radius)*-1)    &&
+          (anX*0.866+anY*0.5  < (this.xPos)                  *0.866 + (this.yPos+this.radius)    *0.5) &&
+          (anX*-0.866+anY*0.5  < (this.xPos)                  *-0.866 + (this.yPos+this.radius)  *0.5) &&
+          true ){
+        return true;
+      }
+      return false;
+    }
+  }
+
+  nearestPointTo(anX,anY){
+    if (this.shape == "square"){
+      return [this.xPos + (anX -this.xPos)/Math.abs(anX -this.xPos) * this.radius, 
+              this.yPos + (anY -this.yPos)/Math.abs(anY -this.yPos) * this.radius];
+    }
+    if (this.shape == "circle"){
+      this.vectLength= Math.sqrt((this.xPos-anX)**2 +(this.yPos-anY)**2)
+      return [this.xPos + (anX-this.xPos)/this.vectLength*this.radius, 
+              this.yPos + (anY-this.yPos)/this.vectLength*this.radius];
+    }
+    if (this.shape == "triangle"){
+      if ((0.5*anX + 0.866*anY)<= (0.5*this.xPos + 0.866*this.yPos) &&
+          (0.5*anX - 0.866*anY)>= (0.5*this.xPos - 0.866*this.yPos)
+          ){
+        return [this.xPos,
+                this.yPos-this.radius];
+      }
+      else if (anX >+ this.xPos &&
+               (0.5*anX + 0.866*anY)> (0.5*this.xPos + 0.866*this.yPos)){
+        return [this.xPos+0.866*this.radius,
+                this.yPos+0.5*this.radius];
+      }
+      else if (anX < this.xPos &&
+               (0.5*anX - 0.866*anY) < (0.5*this.xPos - 0.866*this.yPos)){
+        return [this.xPos-0.866*this.radius,
+                this.yPos+0.5*this.radius];
+      }
+    }
+    if (this.shape == "upsidedown triangle"){
+      return [0,0];
+    }
+  }
+
+}
+
+class confetti {
+  constructor() {
+    this.colorList = [];
+    this.positionList = [];
+    this.targetList = [];
+    this.duration = 25;
+    this.radius = 4;
+  }
+  
+  addFetti(color,start,target) {
+    this.colorList.push(color);
+    this.positionList.push(start);
+    this.targetList.push(target);
+  }
+
+  drawThis(context) {
+    for (let i=0; i<this.targetList.length; ++i){
+      context.fillStyle = this.colorList[i];
+      context.fillRect(this.positionList[i][0]-this.radius, this.positionList[i][1]-this.radius, 2*this.radius, 2*this.radius);
+      this.positionList[i] = [this.positionList[i][0]+ 0.4*(this.targetList[i][0]-this.positionList[i][0]),
+                              this.positionList[i][1]+ 0.4*(this.targetList[i][1]-this.positionList[i][1])]
+    }
+    this.duration -= 1;
+  }
+}
+
+class gameArea {
+  constructor() {
+    this.xSize = displayX;
+    this.ySize = displayY;
+    this.pointBoxColor = "black";
+//    this.pointBoxXSize = 54; //1.5cm
+// with three digit scores, it overflows the box if the box is only 1.5cm
+    this.pointBoxXSize = 63; //1.75cm
+    this.pointBoxYSize = 20;
+    this.numberOfObjects = 0;
+    this.bouncingObjects = null;
+    this.timeStart = 0;
+    this.context = null;
+    this.canvas = null;
+    this.confettiList = [];
+    this.confettiRadius = 100;
+    this.confettiCount = 20; //actual count is not exact
+    this.confettiColors = ["blue","red","purple","green","yellow"]
+  }
+
+  createConfetti(objectIndex){
+    this.confettiList.push(new confetti);
+    this.confettiCenterX = this.bouncingObjects[objectIndex].xPos;
+    this.confettiCenterY = this.bouncingObjects[objectIndex].yPos;
+    for (let i=0; i<2*this.confettiCount; ++i) {
+      this.diffX = Math.random()*2-1;
+      this.diffY = Math.random()*2-1;
+      this.diffZ = Math.random()*2-1;
+      if (this.diffX**2 + this.diffY**2 + this.diffZ**2 <=1){
+        this.confettiList[this.confettiList.length - 1].addFetti(this.confettiColors[Math.floor(Math.random()*this.confettiColors.length)],
+                                                                 [this.confettiCenterX,this.confettiCenterY],
+                                                                 [this.confettiCenterX+this.confettiRadius*this.diffX,
+                                                                  this.confettiCenterY+this.confettiRadius*this.diffY]);
+      }
+    }
+                                 
+  }
+
+  addObjects() {
+    // creates the objects, separate from constructor because there are different numbers of objects
+    this.bouncingObjects = new Array(this.numberOfObjects);
+    for (let i=0; i<this.numberOfObjects; ++i) this.bouncingObjects[i]= new bouncingObject();
+  }
+
+  progressObjects() {
+    // moves the included objects forwards in time
+    for (let i=0; i<this.numberOfObjects; ++i) {
+      this.bouncingObjects[i].xPos = this.bouncingObjects[i].xPos + this.bouncingObjects[i].velocity[0];
+      this.bouncingObjects[i].yPos = this.bouncingObjects[i].yPos + this.bouncingObjects[i].velocity[1];
+    }
+
+    // bounce off walls
+    for (let i=0; i<this.numberOfObjects; ++i) {
+      if (this.bouncingObjects[i].xPos <this.bouncingObjects[i].xLowGap){
+        this.bouncingObjects[i].velocity[0] = -this.bouncingObjects[i].velocity[0];
+        this.bouncingObjects[i].xPos += 1;
+      }
+      if (this.bouncingObjects[i].xPos > this.xSize - this.bouncingObjects[i].xHighGap){
+        this.bouncingObjects[i].velocity[0] = -this.bouncingObjects[i].velocity[0];
+        this.bouncingObjects[i].xPos -= 1;
+      }
+      if (this.bouncingObjects[i].yPos <this.bouncingObjects[i].yLowGap){
+        this.bouncingObjects[i].velocity[1] = -this.bouncingObjects[i].velocity[1];
+        this.bouncingObjects[i].yPos += 1;
+      }
+      if (this.bouncingObjects[i].yPos > this.ySize - this.bouncingObjects[i].yHighGap){
+        this.bouncingObjects[i].velocity[1] = -this.bouncingObjects[i].velocity[1];
+        this.bouncingObjects[i].yPos -= 1;
+      }
+    }
+
+    // bounce off other objects
+    for (let i=0; i<this.numberOfObjects; ++i){
+      for (let j=0; j<i; ++j){
+        this.neighborOne = this.bouncingObjects[i].nearestPointTo(this.bouncingObjects[j].xPos,
+                                                                  this.bouncingObjects[j].yPos);
+        this.neighborTwo = this.bouncingObjects[j].nearestPointTo(this.bouncingObjects[i].xPos,
+                                                                  this.bouncingObjects[i].yPos);
+        if (this.bouncingObjects[i].pointInsideThis(this.neighborTwo[0],this.neighborTwo[1]) ||
+            this.bouncingObjects[j].pointInsideThis(this.neighborOne[0],this.neighborOne[1]) ){
+
+          // correct physics
+          this.posIminusPosJ = [this.bouncingObjects[i].xPos - this.bouncingObjects[j].xPos,
+                             this.bouncingObjects[i].yPos - this.bouncingObjects[j].yPos];
+          this.velIminusVelJ = [this.bouncingObjects[i].velocity[0] - this.bouncingObjects[j].velocity[0],
+                              this.bouncingObjects[i].velocity[1] - this.bouncingObjects[j].velocity[1]];
+          this.coeff = (this.velIminusVelJ[0]*this.posIminusPosJ[0] + this.velIminusVelJ[1]*this.posIminusPosJ[1])/
+                       (this.posIminusPosJ[0]*this.posIminusPosJ[0] + this.posIminusPosJ[1]*this.posIminusPosJ[1]);
+
+          this.bouncingObjects[i].velocity[0] = this.bouncingObjects[i].velocity[0]
+                                                - this.coeff * this.posIminusPosJ[0];
+          this.bouncingObjects[i].velocity[1] = this.bouncingObjects[i].velocity[1]
+                                                - this.coeff * this.posIminusPosJ[1];
+          this.bouncingObjects[j].velocity[0] = this.bouncingObjects[j].velocity[0]
+                                                + this.coeff * this.posIminusPosJ[0];
+          this.bouncingObjects[j].velocity[1] = this.bouncingObjects[j].velocity[1]
+                                                + this.coeff * this.posIminusPosJ[1];
+
+          // hack physics so that the output bounce speed is always fixed
+          this.realSpeed = this.bouncingObjects[i].velocity[0]**2 + this.bouncingObjects[i].velocity[1]**2
+          this.bouncingObjects[i].velocity[0] = this.bouncingObjects[i].velocity[0] / Math.sqrt(this.realSpeed) *this.bouncingObjects[i].speedCoeff
+          this.bouncingObjects[i].velocity[1] = this.bouncingObjects[i].velocity[1] / Math.sqrt(this.realSpeed) *this.bouncingObjects[i].speedCoeff
+          this.realSpeed = this.bouncingObjects[j].velocity[0]**2 + this.bouncingObjects[j].velocity[1]**2
+          this.bouncingObjects[j].velocity[0] = this.bouncingObjects[j].velocity[0] / Math.sqrt(this.realSpeed) *this.bouncingObjects[i].speedCoeff
+          this.bouncingObjects[j].velocity[1] = this.bouncingObjects[j].velocity[1] / Math.sqrt(this.realSpeed) *this.bouncingObjects[i].speedCoeff
+
+          // offset objects so they don't double-hit
+          this.bouncingObjects[i].xPos += this.posIminusPosJ[0]*0.05;
+          this.bouncingObjects[j].xPos -= this.posIminusPosJ[0]*0.05;
+          this.bouncingObjects[i].yPos += this.posIminusPosJ[1]*0.05;
+          this.bouncingObjects[j].yPos -= this.posIminusPosJ[1]*0.05;
+        }
+      }
+    }
+
+  }
+}
+
+class gameManager {
+  constructor() {
+    this.playerScore = 0;
+    this.gameArea = new gameArea();
+    this.roundData = new roundData();
+    this.roundDuration = roundDuration; // in seconds
+    this.interval = null;
+    this.startTime = Date.now();
+    // this.gameArea.numberOfObjects = 2;
+    // this.gameArea.addObjects();
+    this.mouseWasDown = 0;
+    this.backgroundColor = "rgb(220,220,220)";
+    // offset the score time into the past so a point is always available immediately upon new game
+    this.scoreTime = Date.now() - 1000*60;
+    this.clickCount = 0;
+    this.rewardParameter = [12];
+    this.rewardType = ["VI"];
+    this.rewardTimer = [0];
+    this.rewardState = 0;  // determines how far along "rewardX" lists we are
+    this.scorePause = 0; // the index into this.scorePauses
+    this.scorePauses = [12];
+    
+  }
+
+  loadSettings(objectArray = ["circle","triangle"], 
+               objectColors = ["red","blue"],
+               backgroundColor = "rgb(220,220,220)",
+               rewardType = ["VI"],
+               rewardParameter = [12],
+               rewardTimer = [0],
+               duration = 10) {
+    this.gameArea.numberOfObjects = objectArray.length;
+    this.gameArea.addObjects();
+    for (let i=0; i<this.gameArea.numberOfObjects; ++i){
+      this.gameArea.bouncingObjects[i].color = objectColors[i];
+      this.gameArea.bouncingObjects[i].become(objectArray[i]);
+    }
+    this.backgroundColor = backgroundColor;
+    this.rewardType = rewardType;
+    this.rewardParameter = rewardParameter;
+    this.rewardTimer = rewardTimer;
+    this.rewardState = 0;
+    this.roundDuration = duration*60;
+    this.scorePauses = Array(this.rewardParameter[this.rewardState] * 2 - 1);
+    for (let i=1; i<this.rewardParameter[this.rewardState] * 2; ++i){
+      this.scorePauses[i-1] = i;
+    }
+    shuffleArray(this.scorePauses);
+    this.scorePause = 0;
+  }
+
+  createCanvas() {
+    //add the canvas to the html
+    this.toAdd = document.createElement('div');
+    this.htmlCanvas=document.createElement("canvas");
+    this.htmlCanvas.id="zone";
+    this.htmlCanvas.width = displayX;
+    this.htmlCanvas.height = displayY;
+    this.toAdd.append(this.htmlCanvas);
+    document.getElementById("root").appendChild(this.toAdd);
+
+    //connect the html canvas to the game area
+    this.gameArea.canvas = this.htmlCanvas;
+    this.gameArea.context = this.gameArea.canvas.getContext("2d");
+
+    offsetX=this.gameArea.canvas.getBoundingClientRect().left;
+    offsetY=this.gameArea.canvas.getBoundingClientRect().top;
+    
+  }
+
+  play() {
+    // starts or resumes the game
+
+    gameInterval = setInterval(function(){study.gameManager.frameActions();}, 20);
+  }
+
+  pause() {
+    // pauses the game
+
+    clearInterval(gameInterval);
+    gameInterval = null;
+  }
+
+  drawGameArea() {
+    // draws the current game area
+    
+    this.gameArea.context.fillStyle = this.backgroundColor;
+    this.gameArea.context.fillRect(0, 0, this.htmlCanvas.width, this.htmlCanvas.height);
+    this.gameArea.context.fillStyle = this.gameArea.pointBoxColor;
+    this.gameArea.context.fillRect(0, this.htmlCanvas.height-this.gameArea.pointBoxYSize, this.gameArea.pointBoxXSize, this.htmlCanvas.height);
+
+    for (let i=0; i<this.gameArea.numberOfObjects; i++){
+      this.gameArea.bouncingObjects[i].drawThis(this.gameArea.context);
+    }
+
+    this.gameArea.context.font = "12px Arial";
+    this.gameArea.context.fillStyle = "rgb(255,255,255)";
+    this.gameArea.context.fillText("Points:" + this.playerScore, 2, this.htmlCanvas.height-5);
+
+    for (let i=0; i<this.gameArea.confettiList.length; ++i){
+      this.gameArea.confettiList[i].drawThis(this.gameArea.context);
+    };
+    
+    if (this.gameArea.confettiList.length>0){
+      if (this.gameArea.confettiList[0].duration < 0){
+        this.gameArea.confettiList.reverse();
+        this.gameArea.confettiList.pop();
+        this.gameArea.confettiList.reverse();
+      }
+    }
+  }
+
+  updateGameState() {
+    // updates mouse state, bouncing item locations, etc.
+    this.gameArea.progressObjects();
+    this.mouseWasDown=mouseDown;
+    if (this.rewardState+1 < this.rewardTimer.length){
+      if (Date.now()-this.startTime > this.rewardTimer[this.rewardState+1]*1000*60) {
+        this.rewardState += 1;
+        this.scorePauses = Array(this.rewardParameter[this.rewardState] * 2 - 1);
+        for (let i=1; i<this.rewardParameter[this.rewardState] * 2; ++i){
+          this.scorePauses[i-1] = i;
+        }
+        shuffleArray(this.scorePauses);
+        this.scorePause = 0;
+      }
+    }
+  }
+
+  checkScoring() {
+    // checks if there was a scored point, rewards if yes
+    if (mouseDown == 1 && this.mouseWasDown == 0){
+      // store the mouse click regardless of success
+      let mouseOver = -1
+      for (let i=0; i<this.gameArea.numberOfObjects; i++){
+        if (this.gameArea.bouncingObjects[i].mouseAboveThis()){
+          this.processScoring(i);
+          mouseOver = i
+        }
+      }
+      this.roundData.clickObject(mouseOver);
+    }
+  }
+
+  processMouseClick(){
+    // record mouse clicks in the data
+    this.roundData.mouseClicked();
+  }
+
+  processScoring(i) {
+// only give reward to the 0th object
+// this is a hack because only one of them per round is the correct key
+    if (i!= 0) {
+      return;
+    }
+    if (this.rewardType[this.rewardState] == "VI") {
+      if (Date.now()-this.scoreTime>this.scorePauses[this.scorePause]*1000) {
+        this.deliverReward(i);
+        this.scorePause += 1;
+        if (this.scorePause == this.scorePauses.length){
+          this.scorePause = 0;
+          shuffleArray(this.scorePauses);
+        }
+        this.scoreTime = Date.now();
+      }
+    }
+    if (this.rewardType[this.rewardState] == "FR") {
+      this.clickCount += 1;
+      if (this.clickCount >= this.rewardParameter[this.rewardState]) {
+        this.deliverReward(i);
+        this.clickCount = 0;
+      }
+    }
+  }
+
+  deliverReward(i) {
+    this.playerScore += 1;
+    this.gameArea.createConfetti(i);
+    this.roundData.rewardGiven();
+  }
+
+  checkDone() {
+    // checks if the game is over, ends the game if it is
+    if (Date.now()-this.startTime>this.roundDuration*1000) {
+      this.pause();
+      study.endGame();
+    }
+  }
+
+  frameActions() {
+    // does everything that has to happen each "tick" of gameplay
+
+    this.checkDone();
+    this.checkScoring();
+    this.updateGameState();
+    this.drawGameArea();
+  }
+}
+
+class studyManager {
+  constructor() {
+    this.mode = 0;
+    this.dataString = "";
+    this.gameManager = null;
+  }
+
+  loadSave() {
+    // loads the game from local storage, if there is a save already
+    if (localStorage.length==0) return;
+
+    this.mode=localStorage.getItem("mode");
+    if (this.mode==NaN || this.mode<0 || this.mode==null){
+      this.mode = 0;
+      this.dataString = "";
+    }
+    else{
+      this.dataString=localStorage.getItem("data");
+    }
+  }
+
+  saveSave() {
+    // saves the game to local storage
+
+    localStorage.setItem("mode",mode)
+    localStorage.setItem("data",this.dataString)
+  }
+
+  reloadHtmlElements() {
+    // wipes out the html document back to base state
+
+    while (document.getElementById("root").firstChild){
+      document.getElementById("root").removeChild(document.getElementById("root").lastChild);
+    }
+    
+  }
+
+  runGame(objectArray = ["circle","triangle"], 
+               objectColors = ["red","blue"],
+               backgroundColor = "rgb(220,220,220)",
+               rewardType = ["VI"],
+               rewardParameter = [12],
+               rewardTimer = [0],
+               duration = 10) {
+    // creates and starts a new game instance
+    this.gameManager = new gameManager();
+    this.gameManager.createCanvas();
+    this.gameManager.loadSettings(objectArray, objectColors, backgroundColor, rewardType, rewardParameter, rewardTimer, duration);
+    this.gameManager.play();
+  }
+
+  endGame() {
+    // gets called when the game is over, cleans up data from game
+    this.mode += 1;
+    this.reloadHtmlElements();
+
+    // save round data to dataString here.
+    this.dataString = this.dataString.concat(this.gameManager.roundData.toString());
+
+    // go to next action
+    this.nextAction();
+  }
+
+  displayData() {
+    // used at the end of the study to display the data string in its entirety
+
+    this.toAdd = document.createElement('div');
+    this.toAdd.innerHTML='Thanks for playing! Select "yes" to allowing downloads to allow the data file to download. Once downloaded, email the file to <a href= "mailto:taylor.kuck@ku.edu"> taylor.kuck@ku.edu</a>.';
+    document.getElementById("root").appendChild(this.toAdd);
+    // console.log(this.dataString);
+    save("TestData.csv",this.dataString)
+  }
+
+  nextAction() {
+    // the brains of the operation. Knows when to run a new game, when to end
+    // format is:
+    // shapes, colors, background color, reward type, reward parameter, seconds after start to begin next, duration.
+    if (this.mode == 0){
+      // AL-E
+      this.runGame(["square"], ["black"], "red", ["VI"], [5], [0], 10);
+    }
+    if (this.mode == 1){
+      // BL-E
+      this.runGame(["circle","square"], ["black","black"], "blue", ["FR","FR","VI","VI"], [1,2,6,12], [0,1,2,3], 10);
+    }
+    if (this.mode == 2){
+      // ARL-E
+      this.runGame(["circle","square"], ["black","black"], "red", ["VI"], [12], [0], 5);
+    }
+    if (this.mode > 2){
+      this.displayData();
+    }
+  }
+}
+
+function setup() {
+  //check if a number was entered
+  userId=document.getElementById("userNumber").value;
+  if (!(userId>0 && userId<100000)){
+    theTail=document.getElementById("tail");
+    theTail.innerHTML = "Please double check that you entered your number correctly!";
+    return;
+  }
+
+  //add listeners for mouse clicks and moves
+  window.addEventListener('mousedown', function (e) {
+    mouseDown = 1;
+  })
+  window.addEventListener('mouseup', function (e) {
+    mouseDown = 0;
+  })
+  window.addEventListener('mousemove', function (e) {
+    mouseX = e.pageX-offsetX;
+    mouseY = e.pageY-offsetY;
+  })
+
+  document.getElementById("startUp").remove()
+
+  study = new studyManager();
+  study.reloadHtmlElements();
+  study.loadSave();
+
+  study.nextAction();
+
+}
+
+function save(filename, data) {
+    const blob = new Blob([data], {type: 'text/csv'});
+    if(window.navigator.msSaveOrOpenBlob) {
+        window.navigator.msSaveBlob(blob, filename);
+    }
+    else{
+        const elem = window.document.createElement('a');
+        elem.href = window.URL.createObjectURL(blob);
+        elem.download = filename;      
+        elem.style.display = 'none';  
+        document.body.appendChild(elem);
+        elem.click();        
+        document.body.removeChild(elem);
+    }
+}
+
+
+</script>
+
+
+</body>
+</html>
